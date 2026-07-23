@@ -78,18 +78,32 @@ GPS 时间同步另要求至少 `06.06.0000`；不要把单条命令门槛误当
 
 ## 5. 构建后启动
 
+Horizon 提供两个入口，配置校验、节点名 `livox_horizon_publisher` 和四个公开参数
+完全相同，区别仅是固定的点云格式：
+
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/ws_livox/install/setup.bash
 
+# CustomMsg：xfer_format=1
 ros2 launch livox_ros2_driver_bringup horizon.launch.py
+
+# PointCloud2：xfer_format=0
+ros2 launch livox_ros2_driver_bringup horizon_pointcloud2.launch.py
 ```
 
 使用白名单；下例假设在仓库根目录启动，并保持上游点云与 IMU 共同兼容的默认
-frame：
+frame。按下游所需格式选择其中一个入口，不要同时运行：
 
 ```bash
+# CustomMsg
 ros2 launch livox_ros2_driver_bringup horizon.launch.py \
+  user_config_path:="$(pwd)/site_config/horizon.json" \
+  publish_freq:=10.0 \
+  frame_id:=livox_frame
+
+# PointCloud2
+ros2 launch livox_ros2_driver_bringup horizon_pointcloud2.launch.py \
   user_config_path:="$(pwd)/site_config/horizon.json" \
   publish_freq:=10.0 \
   frame_id:=livox_frame
@@ -108,7 +122,11 @@ ros2 launch livox_ros2_driver_bringup horizon.launch.py \
 
 ```bash
 ros2 launch livox_ros2_driver_bringup horizon.launch.py --show-args
+ros2 launch livox_ros2_driver_bringup horizon_pointcloud2.launch.py --show-args
 ```
+
+两者都只公开 `user_config_path`、`publish_freq`、`frame_id` 和
+`allow_auto_discovery`。本版本不允许 `xfer_format=2`。
 
 ## 6. 实机检查
 
@@ -121,8 +139,24 @@ ros2 topic hz /livox/lidar
 ros2 topic hz /livox/imu
 ```
 
-应看到节点 `livox_horizon_publisher`，点云为
-`livox_interfaces/msg/CustomMsg`，IMU 为 `sensor_msgs/msg/Imu`。
+应看到节点 `livox_horizon_publisher`。`horizon.launch.py` 的点云为
+`livox_interfaces/msg/CustomMsg`；`horizon_pointcloud2.launch.py` 的点云为
+`sensor_msgs/msg/PointCloud2`，字段布局为 Livox PointXYZRTL：
+`x`、`y`、`z`、`intensity` 是 `float32`，`tag`、`line` 是 `uint8`。两个入口
+的 IMU 都是 `sensor_msgs/msg/Imu`。
+
+启动 PointCloud2 入口后执行实机消息验收：
+
+```bash
+./scripts/validate_topics.sh \
+  --topic /livox/lidar \
+  --expected-type sensor_msgs/msg/PointCloud2
+```
+
+CustomMsg 与 PointCloud2 使用同一个 `/livox/lidar`，不能在同一 ROS domain 中
+同时运行；需要隔离时使用不同 `ROS_DOMAIN_ID`。无硬件 smoke 只能检查
+`xfer_format=0` 和节点存活。publisher 收到设备数据后才惰性创建，因而无硬件
+环境不能用 `ros2 topic type` 证明 PointCloud2 类型。
 
 ## 7. 常见问题
 

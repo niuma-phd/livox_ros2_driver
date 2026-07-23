@@ -12,7 +12,9 @@ install(DIRECTORY config
 
 install(FILES
   launch/horizon.launch.py
+  launch/horizon_pointcloud2.launch.py
   launch/avia.launch.py
+  launch/avia_pointcloud2.launch.py
   DESTINATION share/${PROJECT_NAME}/launch
 )
 

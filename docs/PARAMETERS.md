@@ -2,11 +2,14 @@
 
 ## Launch 参数
 
-Horizon 与 Avia 的启动文件都固定以下驱动参数：
+Horizon 与 Avia 各有两个启动入口。`horizon.launch.py` 和 `avia.launch.py`
+固定 `xfer_format=1`，发布 `livox_interfaces/msg/CustomMsg`；
+`horizon_pointcloud2.launch.py` 和 `avia_pointcloud2.launch.py` 固定
+`xfer_format=0`，发布 `sensor_msgs/msg/PointCloud2`。四个入口都固定其余驱动
+参数：
 
 | 参数 | 固定值 | 含义 |
 |---|---:|---|
-| `xfer_format` | `1` | 发布 `livox_interfaces/msg/CustomMsg` |
 | `multi_topic` | `0` | 单机使用共享 `/livox/lidar` 与 `/livox/imu` |
 | `data_src` | `0` | 直接连接实体 LiDAR，不读取 Hub/LVX |
 | `output_data_type` | `0` | 输出到 ROS |
@@ -41,8 +44,9 @@ bringup 因此在创建驱动节点前执行 fail-closed 校验：
 随包 `horizon.json` / `avia.json` 是明确用于首次联调的自动发现模板。其他空白名单
 必须显式传 `allow_auto_discovery:=true`；该开关不会放过缺失或损坏的配置文件。
 
-`xfer_format=0` 可发布带 Livox 扩展字段的 PointCloud2；本项目为 LIO 固定使用
-`1`。上游说明中的 `xfer_format=2` 尚未受支持，不应启用。
+PointCloud2 入口沿用相同的 fail-closed 配置门禁和节点名，只把
+`xfer_format` 固定为 `0`。上游说明中的 `xfer_format=2` 在本版本路径中禁用，
+不要通过自定义 launch 绕过该限制。
 
 ## JSON 的 `lidar_config`
 
@@ -85,12 +89,35 @@ bringup 因此在创建驱动节点前执行 fail-closed 校验：
 
 ## 话题
 
-在 `multi_topic=0`、`xfer_format=1` 下：
+在 `multi_topic=0` 下：
 
-| 话题 | 类型 |
+| 启动入口 | `/livox/lidar` | `/livox/imu` |
+|---|---|---|
+| `horizon.launch.py` / `avia.launch.py` | `livox_interfaces/msg/CustomMsg` | `sensor_msgs/msg/Imu` |
+| `horizon_pointcloud2.launch.py` / `avia_pointcloud2.launch.py` | `sensor_msgs/msg/PointCloud2` | `sensor_msgs/msg/Imu` |
+
+PointCloud2 使用 Livox PointXYZRTL 字段：
+
+| 字段 | 类型 |
 |---|---|
-| `/livox/lidar` | `livox_interfaces/msg/CustomMsg` |
-| `/livox/imu` | `sensor_msgs/msg/Imu` |
+| `x`, `y`, `z`, `intensity` | `float32` |
+| `tag`, `line` | `uint8` |
+
+两种格式都发布到 `/livox/lidar`。ROS 2 不允许同一话题在同一 ROS domain 中混用
+不兼容类型，因此不能同时运行 CustomMsg 与 PointCloud2 入口；并行测试必须使用
+不同 `ROS_DOMAIN_ID`。
+
+启动 PointCloud2 入口后，实机验证命令为：
+
+```bash
+./scripts/validate_topics.sh \
+  --topic /livox/lidar \
+  --expected-type sensor_msgs/msg/PointCloud2
+```
+
+无硬件 smoke 只能验证启动文件固定了 `xfer_format=0` 且驱动节点存活。上游
+publisher 在收到设备数据后惰性创建，所以无硬件时话题通常不存在，不能据此证明
+PointCloud2 的实际话题类型。
 
 若下游看不到数据，按顺序检查：
 

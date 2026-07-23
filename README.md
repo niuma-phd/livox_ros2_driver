@@ -21,18 +21,27 @@ Avia 的安全默认配置和独立启动入口。驱动数据转换核心未被
 
 ## 支持范围
 
-| 型号 | 启动文件 | 默认配置 | 默认模式 |
-|---|---|---|---|
-| Horizon | `horizon.launch.py` | `config/horizon.json` | 安全自动发现 |
-| Avia | `avia.launch.py` | `config/avia.json` | 禁用占位条目，安全自动发现 |
+| 型号 | 点云格式 | 启动文件 | 默认配置 | 默认模式 |
+|---|---|---|---|---|
+| Horizon | CustomMsg | `horizon.launch.py` | `config/horizon.json` | 安全自动发现 |
+| Horizon | PointCloud2 | `horizon_pointcloud2.launch.py` | `config/horizon.json` | 安全自动发现 |
+| Avia | CustomMsg | `avia.launch.py` | `config/avia.json` | 禁用占位条目，安全自动发现 |
+| Avia | PointCloud2 | `avia_pointcloud2.launch.py` | `config/avia.json` | 禁用占位条目，安全自动发现 |
 
-两个入口默认都发布：
+四个入口的 `/livox/imu` 都是 `sensor_msgs/msg/Imu`。点云类型由启动文件固定：
 
-- `/livox/lidar`：`livox_interfaces/msg/CustomMsg`
-- `/livox/imu`：`sensor_msgs/msg/Imu`
+- `horizon.launch.py` / `avia.launch.py`：
+  `/livox/lidar` 为 `livox_interfaces/msg/CustomMsg`，`xfer_format=1`；
+- `horizon_pointcloud2.launch.py` / `avia_pointcloud2.launch.py`：
+  `/livox/lidar` 为 `sensor_msgs/msg/PointCloud2`，`xfer_format=0`。
 
-统一固定参数为 `xfer_format=1`、`multi_topic=0`、`data_src=0` 和
-`output_data_type=0`，适合需要每点时间偏移与线号的 LIO 前端。
+PointCloud2 使用 Livox PointXYZRTL 布局：
+`x`、`y`、`z`、`intensity` 为 `float32`，`tag`、`line` 为 `uint8`。
+所有入口仍固定 `multi_topic=0`、`data_src=0` 和 `output_data_type=0`。
+本版本禁用 `xfer_format=2`，不要通过其他启动方式启用。
+
+> 两种点云格式使用相同的 `/livox/lidar` 话题。不要在同一 ROS domain 中同时运行
+> CustomMsg 与 PointCloud2 入口；需要并行测试时应使用不同 `ROS_DOMAIN_ID`。
 
 > `livox_ros_driver2` 面向 HAP / MID-360，不替代本仓库中 Horizon / Avia
 > 使用的第一代 `livox_ros2_driver`。
@@ -97,7 +106,11 @@ launch 会在启动节点前校验文件、JSON、型号字段和 Broadcast Code
 source /opt/ros/humble/setup.bash
 source ~/ws_livox/install/setup.bash
 
+# CustomMsg，xfer_format=1
 ros2 launch livox_ros2_driver_bringup horizon.launch.py
+
+# PointCloud2，xfer_format=0
+ros2 launch livox_ros2_driver_bringup horizon_pointcloud2.launch.py
 ```
 
 ### Avia
@@ -106,10 +119,15 @@ ros2 launch livox_ros2_driver_bringup horizon.launch.py
 source /opt/ros/humble/setup.bash
 source ~/ws_livox/install/setup.bash
 
+# CustomMsg，xfer_format=1
 ros2 launch livox_ros2_driver_bringup avia.launch.py
+
+# PointCloud2，xfer_format=0
+ros2 launch livox_ros2_driver_bringup avia_pointcloud2.launch.py
 ```
 
-两个入口都支持以下覆盖参数：
+四个入口都公开相同的 `user_config_path`、`publish_freq`、`frame_id` 和
+`allow_auto_discovery` 参数。示例：
 
 ```bash
 ros2 launch livox_ros2_driver_bringup horizon.launch.py \
@@ -142,11 +160,18 @@ ros2 topic info -v /livox/lidar
 ros2 topic info -v /livox/imu
 
 ./scripts/validate_topics.sh
+
+# 启动 PointCloud2 入口后
+./scripts/validate_topics.sh \
+  --topic /livox/lidar \
+  --expected-type sensor_msgs/msg/PointCloud2
 ```
 
-预期类型分别为 `livox_interfaces/msg/CustomMsg` 和
-`sensor_msgs/msg/Imu`。无实体雷达时只能验证构建、launch、参数解析和驱动
-持续运行，不能证明发现、点云/IMU 频率、时间同步或 LIO 精度合格。
+不传参数时，脚本按 CustomMsg 点云验收；PointCloud2 入口必须显式传入上面的
+`--expected-type`。无实体雷达时只能验证构建、launch、参数解析、固定
+`xfer_format` 和驱动节点持续运行。上游 publisher 会在收到设备数据后惰性创建，
+因此无硬件 smoke 看不到 `/livox/lidar`，不能据此证明或否定其消息类型，也不能
+证明设备发现、点云/IMU 频率、时间同步或 LIO 精度合格。
 
 ## 仓库边界
 
