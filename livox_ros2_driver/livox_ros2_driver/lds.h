@@ -27,14 +27,15 @@
 #ifndef LIVOX_ROS_DRIVER_LDS_H_
 #define LIVOX_ROS_DRIVER_LDS_H_
 
+#include <atomic>
+#include <condition_variable>
 #include <math.h>
+#include <mutex>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include <mutex>
-#include <condition_variable>
 
 #include "ldq.h"
 
@@ -399,6 +400,14 @@ class Semaphore {
     cv_.notify_one();
   }
 
+  void SignalIfIdle() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (count_ == 0) {
+      count_ = 1;
+      cv_.notify_one();
+    }
+  }
+
   void Wait() {
     std::unique_lock<std::mutex> lock(mutex_);
     cv_.wait(lock, [=] { return count_ > 0; });
@@ -406,13 +415,14 @@ class Semaphore {
   }
 
   int GetCount() {
+    std::unique_lock<std::mutex> lock(mutex_);
     return count_;
   }
 
  private:
   std::mutex mutex_;
   std::condition_variable cv_;
-  volatile int count_;
+  int count_;
 };
 
 /**
@@ -428,11 +438,11 @@ class Lds {
   static void ResetLidar(LidarDevice *lidar, uint8_t data_src);
   static void SetLidarDataSrc(LidarDevice *lidar, uint8_t data_src);
   void ResetLds(uint8_t data_src);
-  void RequestExit();
+  void RequestExit() { request_exit_.store(true); }
   bool IsAllQueueEmpty();
   bool IsAllQueueReadStop();
-  void CleanRequestExit() { request_exit_ = false; }
-  bool IsRequestExit() { return request_exit_; }
+  void CleanRequestExit() { request_exit_.store(false); }
+  bool IsRequestExit() { return request_exit_.load(); }
   virtual void PrepareExit(void);
   void UpdateLidarInfoByEthPacket(LidarDevice *p_lidar, \
       LivoxEthPacket* eth_packet);
@@ -445,7 +455,7 @@ class Lds {
   uint8_t data_src_;
 
  private:
-  volatile bool request_exit_;
+  std::atomic_bool request_exit_;
 };
 
 }  // namespace livox_ros

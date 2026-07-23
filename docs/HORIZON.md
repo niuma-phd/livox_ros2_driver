@@ -114,9 +114,8 @@ ros2 launch livox_ros2_driver_bringup horizon_pointcloud2.launch.py \
 或无启用设备都会直接失败。仅当外部空配置确实用于首次联调时，才显式追加
 `allow_auto_discovery:=true`。
 
-`frame_id` 只会修改点云消息头，上游驱动把 IMU frame 固定为
-`livox_frame`。若 LIO 要求两者相同，应保持这里的默认值；不要把该参数当成同时
-修改 IMU frame 的接口。
+`frame_id` 同时修改点云与 IMU 消息头；默认均为 `livox_frame`。该参数不执行
+LiDAR、内置 IMU 与机体之间的外参变换。
 
 显示可覆盖参数：
 
@@ -144,6 +143,14 @@ ros2 topic hz /livox/imu
 `sensor_msgs/msg/PointCloud2`，字段布局为 Livox PointXYZRTL：
 `x`、`y`、`z`、`intensity` 是 `float32`，`tag`、`line` 是 `uint8`。两个入口
 的 IMU 都是 `sensor_msgs/msg/Imu`。
+
+Horizon 对无目标或超量程位置会输出 `(0,0,0)`，驱动也用零点保持丢包处的时间
+结构；避障和 LIO 前端必须显式过滤零坐标。PointCloud2 没有逐点时间，建议用于
+避障/可视化；LIO 使用 CustomMsg 的 `timebase + offset_time`。IMU 线加速度已
+转换为 `m/s²`，不可用姿态以 `orientation_covariance[0] = -1` 标记。
+
+默认 `timesync=false` 时 Header 使用设备上电后的相对时间，雷达和内置 IMU 同基
+但不等于主机墙钟；动态 TF 或外部传感器融合必须另行完成时间同步。
 
 启动 PointCloud2 入口后执行实机消息验收：
 

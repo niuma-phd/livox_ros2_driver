@@ -23,7 +23,6 @@
 //
 
 #include <chrono>
-#include <csignal>
 #include <future>
 #include <memory>
 #include <thread>
@@ -48,12 +47,6 @@
 namespace
 {
   const int32_t kSdkVersionMajorLimit = 2;
-
-  inline void SignalHandler(int signum)
-  {
-    rclcpp::shutdown();
-    exit(signum);
-  }
 }
 
 namespace livox_ros
@@ -63,8 +56,6 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
 {
   RCLCPP_INFO(this->get_logger(), "Livox Ros Driver Version: %s",
     LIVOX_ROS_DRIVER_VERSION_STRING);
-
-  signal(SIGINT, SignalHandler);
 
   /** Check sdk version */
   LivoxSdkVersion _sdkversion;
@@ -194,8 +185,15 @@ LivoxDriver::LivoxDriver(const rclcpp::NodeOptions & node_options)
 
 LivoxDriver::~LivoxDriver()
 {
-  exit_signal_.set_value();
-  poll_thread_->join();
+  if (poll_thread_) {
+    exit_signal_.set_value();
+    if (lddc_ptr_) {
+      lddc_ptr_->RequestExit();
+    }
+    if (poll_thread_->joinable()) {
+      poll_thread_->join();
+    }
+  }
 }
 
 void LivoxDriver::pollThread()

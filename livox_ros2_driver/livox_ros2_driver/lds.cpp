@@ -585,10 +585,6 @@ void Lds::ResetLds(uint8_t data_src) {
   }
 }
 
-void Lds::RequestExit() {
-  request_exit_ = true;
-}
-
 bool Lds::IsAllQueueEmpty() {
   for (int i = 0; i < lidar_count_; i++) {
     if (!QueueIsEmpty(&lidars_[i].data)) {
@@ -676,9 +672,7 @@ void Lds::StorageRawPacket(uint8_t handle, LivoxEthPacket* eth_packet) {
           packet_statistic->timebase,
           GetPointsPerPacket(eth_packet->data_type));
       if (QueueUsedSize(p_queue) > p_lidar->onetime_publish_packets) {
-        if (semaphore_.GetCount() <= 0) {
-          semaphore_.Signal();
-        }
+        semaphore_.SignalIfIdle();
       }
     }
   } else {
@@ -706,6 +700,7 @@ void Lds::StorageRawPacket(uint8_t handle, LivoxEthPacket* eth_packet) {
           GetEthPacketLen(eth_packet->data_type),
           packet_statistic->imu_timebase,
           GetPointsPerPacket(eth_packet->data_type));
+      semaphore_.SignalIfIdle();
     }
   }
 }

@@ -63,6 +63,7 @@ class Lddc {
   int RegisterLds(Lds *lds);
   void DistributeLidarData(void);
   void CreateBagFile(const std::string &file_name);
+  void RequestExit(void);
   void PrepareExit(void);
 
   uint8_t GetTransferFormat(void) { return transfer_format_; }

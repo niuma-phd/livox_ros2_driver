@@ -22,13 +22,12 @@ Horizon 与 Avia 各有两个启动入口。`horizon.launch.py` 和 `avia.launch
 |---|---|---|
 | `user_config_path` | 对应型号的安装后 JSON | 推荐生产环境传入仓库外绝对路径 |
 | `publish_freq` | `10.0` | 有限浮点 Hz；bringup 在启动前要求 0.1–100 Hz |
-| `frame_id` | `livox_frame` | 仅设置点云消息 frame；见下方限制 |
+| `frame_id` | `livox_frame` | 同时设置点云与 IMU 消息的 frame |
 | `allow_auto_discovery` | `false` | 只允许合法外部空白名单进入自动发现；随包首次联调配置自动获准 |
 
-固定的官方驱动基线在 `lddc.cpp` 中把 IMU 消息的 `header.frame_id` 硬编码为
-`livox_frame`，所以覆盖 launch 的 `frame_id` 不会改变 IMU。为避免 LIO 收到
-不一致的点云/IMU frame，推荐保持默认 `livox_frame`；若下游确实需要其他坐标系，
-应由 TF 或消息重映射/转换层统一处理，而不是误以为该参数会同时修改两类消息。
+v1 修正了固定上游基线的 IMU frame 硬编码，覆盖 `frame_id` 时点云与 IMU 会保持
+一致。该参数只声明消息所在坐标系，不执行外参变换；LiDAR、内置 IMU 与机体之间
+仍需正确标定和发布 TF。
 
 ## 启动前配置门禁
 
@@ -103,6 +102,14 @@ PointCloud2 使用 Livox PointXYZRTL 字段：
 | `x`, `y`, `z`, `intensity` | `float32` |
 | `tag`, `line` | `uint8` |
 
+该 PointCloud2 布局不包含逐点时间，只使用帧首时间作为 Header；要求运动去畸变的
+LIO 应使用 CustomMsg 的 `timebase` 和逐点 `offset_time`。两种格式都会保留 Livox
+协议中的零坐标点，下游必须过滤 `x=y=z=0`，不得只依赖 NaN 过滤。
+
+`/livox/imu` 遵循 `sensor_msgs/msg/Imu`：角速度为 `rad/s`，线加速度为 `m/s²`，
+不可用的姿态用 `orientation_covariance[0] = -1` 标记，其他全零 covariance 表示
+未知。固定 SDK 的原始加速度单位是 `g`，驱动在发布边界乘以 `9.80665`。
+
 两种格式都发布到 `/livox/lidar`。ROS 2 不允许同一话题在同一 ROS domain 中混用
 不兼容类型，因此不能同时运行 CustomMsg 与 PointCloud2 入口；并行测试必须使用
 不同 `ROS_DOMAIN_ID`。
@@ -118,6 +125,10 @@ PointCloud2 使用 Livox PointXYZRTL 字段：
 无硬件 smoke 只能验证启动文件固定了 `xfer_format=0` 且驱动节点存活。上游
 publisher 在收到设备数据后惰性创建，所以无硬件时话题通常不存在，不能据此证明
 PointCloud2 的实际话题类型。
+
+当 `enable_timesync=false` 时，Livox NoSync 时间戳是设备上电后的相对纳秒数，
+不是 Unix/ROS 墙钟。雷达与内置 IMU 保持同一相对时基；动态 TF 或相机/GNSS 等
+跨设备融合仍需外部时间同步或在系统边界进行一致的重时间戳。
 
 若下游看不到数据，按顺序检查：
 

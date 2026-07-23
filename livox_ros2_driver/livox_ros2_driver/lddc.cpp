@@ -40,6 +40,10 @@
 
 namespace livox_ros {
 
+namespace {
+constexpr double kStandardGravity = 9.80665;
+}  // namespace
+
 /** Lidar Data Distribute Control--------------------------------------------*/
 Lddc::Lddc(int format, int multi_topic, int data_src, int output_type,
            double frq, std::string &frame_id)
@@ -472,7 +476,8 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
   uint32_t published_packet = 0;
 
   sensor_msgs::msg::Imu imu_data;
-  imu_data.header.frame_id = "livox_frame";
+  imu_data.header.frame_id = frame_id_;
+  imu_data.orientation_covariance[0] = -1.0;
 
   uint8_t data_source = lds_->lidars_[handle].data_src;
   StoragePacket storage_packet;
@@ -492,9 +497,9 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
   imu_data.angular_velocity.x = imu->gyro_x;
   imu_data.angular_velocity.y = imu->gyro_y;
   imu_data.angular_velocity.z = imu->gyro_z;
-  imu_data.linear_acceleration.x = imu->acc_x;
-  imu_data.linear_acceleration.y = imu->acc_y;
-  imu_data.linear_acceleration.z = imu->acc_z;
+  imu_data.linear_acceleration.x = imu->acc_x * kStandardGravity;
+  imu_data.linear_acceleration.y = imu->acc_y * kStandardGravity;
+  imu_data.linear_acceleration.z = imu->acc_z * kStandardGravity;
 
   QueuePopUpdate(queue);
   ++published_packet;
@@ -530,7 +535,7 @@ void Lddc::PollingLidarPointCloudData(uint8_t handle, LidarDevice *lidar) {
     return;
   }
 
-  while (!QueueIsEmpty(p_queue)) {
+  while (!QueueIsEmpty(p_queue) && !lds_->IsRequestExit()) {
     uint32_t used_size = QueueUsedSize(p_queue);
     uint32_t onetime_publish_packets = lidar->onetime_publish_packets;
     if (used_size < onetime_publish_packets) {
@@ -552,7 +557,7 @@ void Lddc::PollingLidarImuData(uint8_t handle, LidarDevice *lidar) {
   if (p_queue->storage_packet == nullptr) {
     return;
   }
-  while (!QueueIsEmpty(p_queue)) {
+  while (!QueueIsEmpty(p_queue) && !lds_->IsRequestExit()) {
     PublishImuData(p_queue, 1, handle);
   }
 }
@@ -562,7 +567,14 @@ void Lddc::DistributeLidarData(void) {
     return;
   }
   lds_->semaphore_.Wait();
+  if (lds_->IsRequestExit()) {
+    PrepareExit();
+    return;
+  }
   for (uint32_t i = 0; i < lds_->lidar_count_; i++) {
+    if (lds_->IsRequestExit()) {
+      break;
+    }
     uint32_t lidar_id = i;
     LidarDevice *lidar = &lds_->lidars_[lidar_id];
     LidarDataQueue *p_queue = &lidar->data;
@@ -677,6 +689,15 @@ void Lddc::PrepareExit(void) {
     lds_->PrepareExit();
     lds_ = nullptr;
   }
+}
+
+void Lddc::RequestExit(void) {
+  Lds *const lds = lds_;
+  if (!lds) {
+    return;
+  }
+  lds->RequestExit();
+  lds->semaphore_.Signal();
 }
 
 }  // namespace livox_ros

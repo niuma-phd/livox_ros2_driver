@@ -85,9 +85,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "frame_id",
             default_value="livox_frame",
-            description=(
-                "Point cloud frame only; the pinned driver keeps IMU frame as livox_frame."
-            ),
+            description="Point cloud and IMU frame.",
         ),
         DeclareLaunchArgument(
             "allow_auto_discovery",

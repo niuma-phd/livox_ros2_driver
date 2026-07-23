@@ -5,7 +5,8 @@
 本仓库以 Livox 官方第一代 ROS 2 驱动为基线，保留官方
 `livox_ros2_driver`、`livox_interfaces` 和 `livox_sdk_vendor` 三个包，
 另外提供一个统一的 `livox_ros2_driver_bringup` 包，分别暴露 Horizon 与
-Avia 的安全默认配置和独立启动入口。驱动数据转换核心未被改写。
+Avia 的安全默认配置和独立启动入口。v1 在固定上游基线上修正了 ROS 退出顺序、
+IMU 实时分发、SI 单位和消息可用性标记，不改变两种点云消息的字段布局。
 
 ## 固定来源
 
@@ -39,6 +40,14 @@ PointCloud2 使用 Livox PointXYZRTL 布局：
 `x`、`y`、`z`、`intensity` 为 `float32`，`tag`、`line` 为 `uint8`。
 所有入口仍固定 `multi_topic=0`、`data_src=0` 和 `output_data_type=0`。
 本版本禁用 `xfer_format=2`，不要通过其他启动方式启用。
+
+`/livox/imu` 的角速度单位为 `rad/s`，线加速度已从 SDK 原始 `g` 转换为
+ROS `sensor_msgs/Imu` 要求的 `m/s²`；雷达不提供姿态估计，因此
+`orientation_covariance[0] = -1`。`frame_id` 同时作用于点云与 IMU。
+
+Livox 会对无目标、超量程或补偿丢包的位置输出零坐标点，下游必须显式过滤
+`x=y=z=0`。PointCloud2 入口没有逐点时间字段，适合避障/可视化；需要逐点时间的
+LIO 应使用 CustomMsg 的 `timebase + offset_time`。
 
 > 两种点云格式使用相同的 `/livox/lidar` 话题。不要在同一 ROS domain 中同时运行
 > CustomMsg 与 PointCloud2 入口；需要并行测试时应使用不同 `ROS_DOMAIN_ID`。
@@ -140,9 +149,8 @@ ros2 launch livox_ros2_driver_bringup horizon.launch.py \
 `allow_auto_discovery:=true`。随包默认配置是首次联调的特例，无需该参数；缺失或
 损坏的配置即使允许自动发现也会被拒绝。
 
-上游固定基线中的 `frame_id` 只作用于点云消息；IMU 消息头仍固定为
-`livox_frame`。因此需要点云与 IMU 使用同一 frame 的 LIO 部署应保持默认值，
-不要只覆盖该参数。详见 [公共参数说明](docs/PARAMETERS.md)。
+`frame_id` 同时设置点云与 IMU 消息头；默认值为 `livox_frame`。详见
+[公共参数说明](docs/PARAMETERS.md)。
 
 详细配置：
 
@@ -179,5 +187,6 @@ ros2 topic info -v /livox/imu
 - 不包含 rosbag、本机/现场设备 IP、真实 Broadcast Code、真实序列号或现场凭据；
   上游公开且禁用的示例配置原样保留。
 - `site_config/` 已忽略，用于本机真实设备白名单。
-- 不修改点云、IMU 或 SDK 数据路径；型号差异只放在 bringup、JSON 和文档层。
+- 不改变 CustomMsg 或 PointCloud2 字段布局；驱动只在 ROS 边界规范化 IMU 单位、
+  frame 和不可用姿态标记，并修复分发/退出生命周期。
 - 上游原始说明保存在 [docs/upstream](docs/upstream/)。

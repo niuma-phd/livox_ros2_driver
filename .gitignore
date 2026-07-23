@@ -18,6 +18,7 @@ htmlcov/
 # Local runtime data and device-specific configuration
 .env
 site_config/
+verification/
 *.bag
 *.db3
 *.mcap
