@@ -66,7 +66,7 @@ do
     fail "源码与安装区 launch 不一致: $launch"
 done
 
-file "$node_binary"
 printf '构建完成: %s\n' "$WORKSPACE/install"
+printf '节点: %s\n架构: %s\n' "$node_binary" "$(uname -m)"
 printf '仓库提交: %s\nSDK 提交: %s\n' \
   "$(git -C "$WORKSPACE" rev-parse HEAD)" "$EXPECTED_SDK_COMMIT"

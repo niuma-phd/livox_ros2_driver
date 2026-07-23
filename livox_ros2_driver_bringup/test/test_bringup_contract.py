@@ -192,6 +192,7 @@ def test_rdk_scripts_use_the_merged_workspace_and_explicit_message_modes():
     assert "merge-base --is-ancestor v0.0.1 HEAD" in build
     assert "cmp" in build
     assert "horizon_pointcloud2.launch.py" in build
+    assert 'file "$node_binary"' not in build
 
     assert "horizon|avia [custommsg|pointcloud2]" in start
     assert 'launch_file="${model}_pointcloud2.launch.py"' in start
