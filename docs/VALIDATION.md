@@ -1,4 +1,4 @@
-# 构建与无硬件验证
+# 构建与验证
 
 本文件只记录可重复的验证口径。具体镜像构建文件不属于本仓库。
 
@@ -55,6 +55,38 @@ Dockerfile、Compose 或镜像产物。
 
 本次无硬件 smoke 未产生 `/livox/lidar`；这符合 publisher 收到设备数据后才惰性
 创建的实现，不能代替下文的实机话题类型与数据验收。
+
+## 2026-07-24 RDK Horizon 实机验证结果
+
+以下结果覆盖 `v1.0.0 beta` 候选的数据路径提交
+`d95e1954981061aea541d0344ee822e3f54b8270`。目标机为 aarch64 RDK、Ubuntu
+22.04、ROS 2 Humble；使用真实 Horizon 和固定 SDK 提交
+`14c533dd7175bd90a6b568c0aa1733f35d36cb89`。最终发布若只在该提交之后修订本文，
+无需把文档提交误写成重新测试过的数据路径。
+
+| 项目 | 结果 |
+|---|---|
+| RDK 干净构建 | Release 模式 4 个包完成；节点架构为 aarch64 |
+| Python 契约测试 | 52 passed |
+| bringup colcon 测试 | 4 个 CTest 目标通过；汇总 56 tests、0 errors、0 failures、0 skipped |
+| SDK 日志符号隔离 | 驱动共享库动态导出的 SDK `spdlog` / `fmt::v5` 符号为 0；ROS component 仍可发现 |
+| PointCloud2 | 201 帧/20 秒；到达 10.007 Hz、Header 10.000 Hz；每帧固定 24,000 点 |
+| PointCloud2 ABI | `x/y/z/intensity` 为 `float32`，`tag/line` 为 `uint8`，`point_step=18`，数据长度一致 |
+| CustomMsg | C++ typed probe 收到 200 帧/20 秒；到达与 Header 均为 10.000 Hz；每帧固定 24,000 点 |
+| CustomMsg LIO 时间 | `header.stamp == timebase`，二者非零且严格递增；全部 480 万点的 `offset_time` 单调，帧跨度 99.819–99.856 ms |
+| 点数据质量 | 两种模式均无非有限 XYZ；零 XYZ 比例约 6.7%，按 Livox 无回波语义保留 |
+| PointCloud2 模式 IMU | 4,041 条/20 秒；到达 202.020 Hz、Header 202.021 Hz；最大到达间隔 7.79 ms |
+| CustomMsg 模式 IMU | 4,041 条/20 秒；到达 202.014 Hz、Header 202.011 Hz；最大到达间隔 7.26 ms |
+| IMU 语义 | 静止加速度模长均值约 9.756 m/s²；`orientation_covariance[0] == -1`；点云和 IMU 均为 `livox_frame` |
+| 网络 | 两轮采集期间 eth0、eth1 的错误/丢弃计数及 UDP `InErrors/RcvbufErrors/SndbufErrors` 增量均为 0 |
+| 路由隔离 | 采集前后，默认路由和管理链路均在 eth0；雷达路由走 eth1；`livox_lidar` NetworkManager 配置保持启用 |
+| Ctrl-C 退出 | PointCloud2 5/5、CustomMsg 5/5 返回 0，均完成 SDK Deinit，无崩溃标记和残留进程 |
+
+`rdk/validate_topics.sh` 只验证话题类型并接收一条消息，因此它是 smoke test，
+不能单独证明频率或数据语义。CustomMsg 的发布频率和 LIO 时间结构使用 C++ typed
+probe 验证；逐点构造 Python 对象的 rclpy 探针吞吐不足 10 Hz，只用于内容抽样，
+不能据其墙钟接收率判断驱动掉帧。独立 IMU 探针用于隔离点云解析负载并检查 200 Hz
+和到达间隔。
 
 ## 静态与单元测试
 
@@ -134,25 +166,32 @@ SIGINT；不得出现参数解析错误、配置文件缺失、崩溃或 OOM。
 不要在同一 ROS domain 中同时运行 CustomMsg 和 PointCloud2 smoke；两者使用相同
 的 `/livox/lidar`，并行执行时必须设置不同 `ROS_DOMAIN_ID`。
 
-## 实机仍需验证
+## 实机复测方法与未覆盖范围
 
-启动 PointCloud2 入口并连接对应实体雷达后执行：
+启动对应入口并连接实体雷达后，分别执行：
 
 ```bash
-./scripts/validate_topics.sh \
-  --topic /livox/lidar \
-  --expected-type sensor_msgs/msg/PointCloud2
+./rdk/start_driver.sh horizon pointcloud2
+./rdk/validate_topics.sh pointcloud2
+
+./rdk/start_driver.sh horizon custommsg
+./rdk/validate_topics.sh custommsg
 ```
 
-该检查等待 `/livox/lidar`、确认类型并接收一条消息；不能用无硬件 smoke 代替。
-PointCloud2 应使用 Livox PointXYZRTL 字段：`x`、`y`、`z`、`intensity` 为
-`float32`，`tag`、`line` 为 `uint8`。`/livox/imu` 仍应为
+两次运行不能同时占用同一设备。检查会等待 `/livox/lidar`、确认类型并接收一条
+消息；完整验收还必须检查稳定频率、点数、字段或逐点时间、IMU 以及进程组 SIGINT
+退出。PointCloud2 应使用 Livox PointXYZRTL 字段：`x`、`y`、`z`、`intensity`
+为 `float32`，`tag`、`line` 为 `uint8`。`/livox/imu` 仍应为
 `sensor_msgs/msg/Imu`。本版本禁用 `xfer_format=2`。
 
-无硬件测试不能证明：
+当前仍未覆盖：
 
-- Horizon / Avia 被正确发现；
-- `/livox/lidar` 和 `/livox/imu` 有稳定数据；
-- 频率、QoS、网络丢包和时间同步合格；
-- arm64 构建或目标设备运行合格；
+- Avia 实机发现、数据和退出行为；当前只有公共代码路径、构建和 launch 契约证据；
+- 不同 Horizon 固件、交换机或高网络负载下的丢包表现；
+- PTP/GPS 同步；本次 NoSync 时间戳是设备上电后的相对时间，不能与系统 wall clock
+  直接比较；
 - LIO 外参、时间偏差或定位精度合格。
+
+PointCloud2 不含逐点时间，适合当前避障用途；LIO 应使用 CustomMsg 的
+`timebase + offset_time`。零 XYZ 是 Livox 无回波/超量程语义，应由下游过滤，
+驱动不应静默删除并改变固定点数或时间索引。
