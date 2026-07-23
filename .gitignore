@@ -1,8 +1,23 @@
+# ROS 2 / colcon outputs
+build/
+install/
+log/
 
-# ignore dir or file
-livox_ros_driver/Livox-SDK
-livox_ros2_driver/launch/__pycache__/*.pyc
-#whitelist
+# Python test and bytecode outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
 
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
 
-
+# Local runtime data and device-specific configuration
+.env
+site_config/
+*.bag
+*.db3
+*.mcap
