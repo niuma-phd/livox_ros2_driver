@@ -127,6 +127,11 @@ def test_vendor_is_pinned_to_immutable_commit():
     assert 'set(livox_sdk_REV "v2.3.1")' not in source
 
 
+def test_embedded_sdk_symbols_are_hidden_from_system_spdlog():
+    source = (REPO_ROOT / "livox_ros2_driver" / "CMakeLists.txt").read_text()
+    assert "--exclude-libs,liblivox_sdk_static.a" in source
+
+
 def test_driver_uses_rclcpp_signal_lifecycle_and_wakes_blocked_polling():
     driver = _driver_source("livox_ros2_driver.cpp")
     lddc_header = _driver_source("lddc.h")

@@ -89,6 +89,14 @@ target_link_libraries(${PROJECT_NAME}
 	${PCL_LIBRARIES}
 	${APR_LIBRARIES}
 )
+
+# Livox-SDK statically embeds spdlog 1.3 while ROS/PCL can load a newer system
+# spdlog. Keep all symbols from the SDK archive local to this shared library so
+# ELF symbol interposition cannot mix the incompatible implementations.
+if(UNIX AND NOT APPLE)
+  set_property(TARGET ${PROJECT_NAME} APPEND_STRING PROPERTY
+    LINK_FLAGS " -Wl,--exclude-libs,liblivox_sdk_static.a")
+endif()
 #  ${sensor_msgs_LIBRARIES}
 #  ${std_msgs_LIBRARIES}
 #  ${Boost_SYSTEM_LIBRARY}
